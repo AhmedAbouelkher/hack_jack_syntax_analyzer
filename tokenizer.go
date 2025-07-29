@@ -51,16 +51,16 @@ const (
 	SymDOT       string = "."
 	SymCOMMA     string = ","
 	SymSEMICOLON string = ";"
-	SymPLUS      string = "+"
-	SymMINUS     string = "-"
-	SymSTAR      string = "*"
-	SymSLASH     string = "/"
-	SymAMPERSAND string = "&"
-	SymPIPE      string = "|"
-	SymLT        string = "<"
-	SymGT        string = ">"
-	SymEQ        string = "="
-	SymTILDE     string = "~"
+	SymPLUS      string = "+" // op
+	SymSTAR      string = "*" // op
+	SymSLASH     string = "/" // op
+	SymAMPERSAND string = "&" // op
+	SymPIPE      string = "|" // op
+	SymLT        string = "<" // op
+	SymGT        string = ">" // op
+	SymEQ        string = "=" // op
+	SymMINUS     string = "-" // op and unaryOp
+	SymTILDE     string = "~" // unaryOp
 )
 
 var (
@@ -72,14 +72,18 @@ var (
 		KwTHIS, KwLET, KwDO, KwIF, KwELSE, KwWHILE, KwRETURN,
 	}
 	symbols = []string{
-		SymLBRACE, SymRBRACE, SymLPAREN, SymRPAREN, SymLSQBR, SymRSQBR, SymDOT, SymCOMMA, SymSEMICOLON, SymPLUS, SymMINUS, SymSTAR, SymSLASH, SymAMPERSAND, SymPIPE, SymLT, SymGT, SymEQ, SymTILDE,
+		SymLBRACE, SymRBRACE, SymLPAREN, SymRPAREN, SymLSQBR, SymRSQBR,
+		SymDOT, SymCOMMA, SymSEMICOLON, SymPLUS, SymMINUS, SymSTAR, SymSLASH,
+		SymAMPERSAND, SymPIPE, SymLT, SymGT, SymEQ, SymTILDE,
 	}
-
-	keywordRgx = strings.Join(keywords, "|") // Regex pattern for matching keywords
-	symRgx     = buildSymbolRegex()          // Regex pattern for matching symbols
-	numRgx     = `\d+`                       // Regex pattern for matching integer constants
-	strRgx     = `"[^"\n]*"`                 // Regex pattern for matching string constants (anything between quotes, no newlines)
-	idRgx      = `[\w\-]+`                   // Regex pattern for matching identifiers (alphanumeric + underscore + hyphen)
+	opList = []string{SymPLUS, SymSTAR, SymSLASH, SymAMPERSAND, SymPIPE,
+		SymLT, SymGT, SymEQ, SymMINUS}
+	keyboardConstants = []string{KwTRUE, KwFALSE, KwNULL, KwTHIS}
+	keywordRgx        = strings.Join(keywords, "|") // Regex pattern for matching keywords
+	symRgx            = buildSymbolRegex()          // Regex pattern for matching symbols
+	numRgx            = `\d+`                       // Regex pattern for matching integer constants
+	strRgx            = `"[^"\n]*"`                 // Regex pattern for matching string constants (anything between quotes, no newlines)
+	idRgx             = `[\w\-]+`                   // Regex pattern for matching identifiers (alphanumeric + underscore + hyphen)
 )
 
 func buildSymbolRegex() string {
@@ -98,6 +102,13 @@ type Token struct {
 
 func (t Token) Tag() string {
 	return fmt.Sprintf("<%s> %s </%s>", t.tokenType, t.tokenValue, t.tokenType)
+}
+
+func (t Token) UnescapedValue() string {
+	if t.tokenType == SYMBOL {
+		return html.UnescapeString(t.tokenValue)
+	}
+	return t.tokenValue
 }
 
 func (t Token) Int() int {
@@ -130,6 +141,13 @@ func (t Token) IsMulti(typ TokenType, vals ...string) bool {
 }
 
 func (t Token) Is(typ TokenType, val string) bool {
+	if val == "" {
+		return t.tokenType == typ
+	}
+	if typ == SYMBOL {
+		// unescape the value
+		val = html.UnescapeString(val)
+	}
 	return t.tokenType == typ && t.tokenValue == val
 }
 
@@ -170,7 +188,11 @@ func NewTokenizer(source string) (*Tokenizer, error) {
 
 func (t *Tokenizer) removeComments(line string) string {
 	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") {
+	if line == "" ||
+		strings.HasPrefix(line, "//") ||
+		strings.HasPrefix(line, "/*") ||
+		strings.HasPrefix(line, "*/") ||
+		strings.HasPrefix(line, "*") {
 		return ""
 	}
 	segments := strings.Split(line, "//")

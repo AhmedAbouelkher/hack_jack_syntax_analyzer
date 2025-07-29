@@ -34,7 +34,7 @@ func getStack() []byte {
 		if n < len(buf) {
 			// remove the first 3 lines
 			lines := strings.Split(string(buf[:n]), "\n")
-			linesN := 3*2 + 1
+			linesN := 1*2 + 1
 			lines = lines[linesN:]
 			return []byte(strings.Join(lines, "\n"))
 		}

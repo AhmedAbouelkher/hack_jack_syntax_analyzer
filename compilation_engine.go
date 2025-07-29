@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"slices"
 )
 
 type CompilationEngine struct {
@@ -36,8 +37,8 @@ func (ce *CompilationEngine) advance() (Token, error) {
 
 func (ce *CompilationEngine) process(tok TokenType, val string) error {
 	ct := ce.currentToken
-	if ct.tokenType != tok || (val != "" && ct.tokenValue != val) {
-		return NewTokenErr(ct, "expected %s %s , got %s %s", tok, val, ct.tokenType, ct.tokenValue)
+	if ct.tokenType != tok || (val != "" && ct.UnescapedValue() != val) {
+		return NewTokenErr(ct, "expected %s %s , got %s %s", tok, val, ct.tokenType, ct.UnescapedValue())
 	}
 	ce.advance()
 	return ce.print(ct.Tag())
@@ -109,8 +110,8 @@ func (ce *CompilationEngine) processClassVar() error {
 
 func (ce *CompilationEngine) processType() error {
 	ct := ce.currentToken
-	isType := ct.tokenType == KEYWORD &&
-		(ct.tokenValue == KwINT || ct.tokenValue == KwCHAR || ct.tokenValue == KwBOOLEAN || ct.tokenValue == KwVOID)
+	val := ct.UnescapedValue()
+	isType := ct.tokenType == KEYWORD && (val == KwINT || val == KwCHAR || val == KwBOOLEAN || val == KwVOID)
 	if isType {
 		return ce.process(KEYWORD, "")
 	}
@@ -242,7 +243,7 @@ func (ce *CompilationEngine) processStatements() error {
 	ce.printOpenTag("statements")
 	for ce.currentToken.IsMulti(KEYWORD, KwLET, KwDO, KwIF, KwWHILE, KwRETURN) {
 		var err error
-		switch ce.currentToken.tokenValue {
+		switch ce.currentToken.UnescapedValue() {
 		case KwLET:
 			err = ce.processLetStm()
 		case KwDO:
@@ -458,6 +459,104 @@ func (ce *CompilationEngine) processWhileStm() error {
 	return nil
 }
 
+// TODO: setup process expression
+func (ce *CompilationEngine) processExpression() error {
+	// check if it is a token
+	ct := ce.currentToken
+
+	isKeyboardConstant := ct.tokenType == KEYWORD && slices.Contains(keyboardConstants, ct.UnescapedValue())
+	isUnaryOp := ct.Is(SYMBOL, SymTILDE) || ct.Is(SYMBOL, SymMINUS)
+	isVarName := ct.Is(IDENTIFIER, "")
+	isValidTerm := ct.tokenType == INT_CONST || ct.tokenType == STRING_CONST ||
+		isKeyboardConstant || isVarName || isUnaryOp || ct.Is(SYMBOL, SymLPAREN)
+
+	if !isValidTerm {
+		return NewTokenErr(ct, "expected term, got %s", ct.Tag())
+	}
+
+	ce.printOpenTag("expression")
+
+	// process the first term
+	if err := ce.processTerm(); err != nil {
+		return err
+	}
+
+	// process the rest of the terms
+	for slices.Contains(opList, ce.currentToken.UnescapedValue()) {
+		if err := ce.process(SYMBOL, ""); err != nil {
+			return err
+		}
+		if err := ce.processTerm(); err != nil {
+			return err
+		}
+	}
+
+	ce.printCloseTag("expression")
+	return nil
+}
+
+func (ce *CompilationEngine) processTerm() error {
+	ce.printOpenTag("term")
+
+	ct := ce.currentToken
+	isKeyboardConstant := ct.tokenType == KEYWORD &&
+		slices.Contains(keyboardConstants, ct.UnescapedValue())
+
+	if ct.tokenType == INT_CONST || ct.tokenType == STRING_CONST || isKeyboardConstant {
+		ct := ce.currentToken
+		if _, err := ce.advance(); err != nil {
+			return err
+		}
+		if err := ce.print(ct.Tag()); err != nil {
+			return err
+		}
+	} else if ct.Is(SYMBOL, SymLPAREN) {
+		if err := ce.process(SYMBOL, SymLPAREN); err != nil {
+			return err
+		}
+		if err := ce.processExpression(); err != nil {
+			return err
+		}
+		if err := ce.process(SYMBOL, SymRPAREN); err != nil {
+			return err
+		}
+	} else if ct.Is(SYMBOL, SymMINUS) || ct.Is(SYMBOL, SymTILDE) {
+		// unary processing
+		if err := ce.process(SYMBOL, ""); err != nil {
+			return err
+		}
+		if err := ce.processTerm(); err != nil {
+			return err
+		}
+	} else if ct.Is(IDENTIFIER, "") { // check var name
+		if err := ce.process(IDENTIFIER, ""); err != nil {
+			return err
+		}
+		if ce.currentToken.Is(SYMBOL, SymLSQBR) {
+			// array processing
+			if err := ce.process(SYMBOL, SymLSQBR); err != nil {
+				return err
+			}
+			if err := ce.processExpression(); err != nil {
+				return err
+			}
+			if err := ce.process(SYMBOL, SymRSQBR); err != nil {
+				return err
+			}
+		} else if ce.currentToken.Is(SYMBOL, SymLPAREN) || ce.currentToken.Is(SYMBOL, SymDOT) {
+			// function calls processing or object processing
+			if err := ce.processSubroutineCall(); err != nil {
+				return err
+			}
+		}
+	} else {
+		return NewTokenErr(ct, "expected array, function call, or object, got %s", ct.Tag())
+	}
+
+	ce.printCloseTag("term")
+	return nil
+}
+
 func (ce *CompilationEngine) processExpressionList() error {
 	ce.printOpenTag("expressionList")
 	if !ce.currentToken.Is(SYMBOL, SymRPAREN) {
@@ -474,26 +573,5 @@ func (ce *CompilationEngine) processExpressionList() error {
 		}
 	}
 	ce.printCloseTag("expressionList")
-	return nil
-}
-
-// TODO: setup process expression
-func (ce *CompilationEngine) processExpression() error {
-	ce.printOpenTag("expression")
-
-	ce.printOpenTag("term")
-	if ce.currentToken.Is(KEYWORD, KwTHIS) {
-		if err := ce.process(KEYWORD, ""); err != nil {
-			return err
-		}
-	} else {
-		if err := ce.process(IDENTIFIER, ""); err != nil {
-			return err
-		}
-	}
-	// print ;
-	ce.printCloseTag("term")
-
-	ce.printCloseTag("expression")
 	return nil
 }

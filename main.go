@@ -14,7 +14,7 @@ import (
 func main() {
 	var jackSrcFiles, cmpFile string
 	flag.StringVar(&jackSrcFiles, "s", "", "source file in jack extension (e.g. Add.jack or a Directory with multiple jack files)")
-	flag.StringVar(&cmpFile, "c", "", "compare file")
+	flag.StringVar(&cmpFile, "c", "", "compare file in xml extension (e.g. Add.xml)")
 	flag.Parse()
 	if jackSrcFiles == "" {
 		fmt.Println("No source file provided")
