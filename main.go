@@ -132,7 +132,7 @@ func processJackFile(jackFile *os.File) {
 		fmt.Printf("Error writing xml file %s: %s\n", xmlFile, err)
 		os.Exit(1)
 	}
-	println("Compilation engine complete for ", jackFile.Name(), " ✅")
+	println("Compilation engine complete for", jackFile.Name(), " ✅")
 }
 
 func printError(fileName string, err error) {
