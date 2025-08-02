@@ -228,7 +228,3 @@ go build -o jack-analyzer
 ## Compliance
 
 This implementation fully complies with the Nand2Tetris Project 10 specification and generates XML output that matches the expected format for the course's test suite.
-
-## License
-
-This project is part of the Nand2Tetris educational curriculum. See the course materials for licensing information.
